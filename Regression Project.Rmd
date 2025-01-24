@@ -1,0 +1,220 @@
+---
+title: "sleep project"
+author: "Allison Buck"
+date: "2023-11-02"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+read in libraries and view original data set 
+```{r}
+library(readxl)
+
+sleep <- read_xlsx("sleep2.xlsx")
+```
+
+view the structure and summary of the original data 
+```{r}
+str(sleep)
+summary(sleep)
+```
+
+remove rows with empty cells and view data again 
+```{r}
+sleep[sleep == ''] <- NA
+sleep2 <- na.omit(sleep)
+```
+
+remove unnecessary variables
+```{r}
+sleep2 <- subset(sleep2, select = -c(mturk, whatdisorder))
+```
+
+histograms to assess whether transformations are needed for quantitative variables 
+```{r}
+par(mfrow=c(2,2))
+hist(sleep2$lwsleep)
+hist(sleep2$lnsleep)
+hist(sleep2$age)
+hist(sleep2$optimalsleep)
+
+hist(log(sleep2$age))
+```
+
+add lnage as a variable to the data set
+```{r}
+sleep2$lnage <- log(sleep2$age)
+```
+
+box plots for categorical variables 
+```{r}
+depression <- table(sleep2$depression)
+depression 
+
+anxiety <- table(sleep2$anxiety)
+anxiety
+
+epworth <- table(sleep2$epworth)
+epworth
+
+rmeq <- table(sleep2$rmeq)
+rmeq
+
+female <- table(sleep2$female)
+female
+
+minority <- table(sleep2$minority)
+minority
+
+student <- table(sleep2$student)
+student
+
+plot <- boxplot(lwsleep ~ female, data = sleep2)
+
+boxplot(lwsleep ~ minority, data = sleep2)
+
+boxplot(lwsleep ~ student, data = sleep2)
+```
+
+scatter plot matrix and correlations
+```{r}
+pairs(~ lnsleep + age + optimalsleep + lnage + lwsleep, data = sleep2, upper.panel = NULL)
+
+cor(sleep2[, c("lnsleep", "depression", "anxiety", "epworth", "rmeq", "female", "minority", "student", "optimalsleep", "lnage", "lwsleep")], use = "complete.obs")
+```
+
+view structure and summary of cleaned data set
+```{r}
+str(sleep2)
+summary(sleep2)
+```
+
+start of project! 
+
+model 1: full model with not transformations
+```{r}
+model_1 <- lm(lwsleep ~ lnsleep + depression + anxiety + epworth + rmeq + female + minority + student + optimalsleep + sdisorder + lnage, data = sleep2)
+summary(model_1)
+```
+
+model 2: all significant variables from full model 
+```{r}
+model_2 <- lm(lwsleep ~ lnsleep + anxiety + rmeq + epworth + optimalsleep, data = sleep2)
+summary(model_2)
+```
+
+model 3: forward stepwise 
+```{r}
+# install packages
+if(!require('MASS')) {  
+	install.packages('MASS')
+}
+library(MASS)
+
+# null model
+null_model <- lm(lwsleep ~ 1, data = sleep2)  
+
+# Use AIC as the selection criteria
+model_3 <- stepAIC(null_model, scope = list(lower = null_model, upper = model_1), k = 2, direction = "forward")
+summary(model_3)
+```
+
+model 4: backward stepwise
+```{r}
+model_4 <- stepAIC(model_1, scope = list(lower = null_model, upper = model_1), k = 2, direction = "backward")  
+summary(model_4)
+```
+
+model 5: interaction terms -- added depression and anxiety interaction term into the full model
+```{r}
+# correlation coefficients between variables 
+cor(sleep2[, c("lnsleep", "depression", "anxiety", "epworth", "rmeq", "female", "minority", "student", "optimalsleep", "lnage", "lwsleep")], use = "complete.obs")
+
+fit1 <- lm(lwsleep ~ anxiety + depression, data = sleep2)
+summary(fit1)
+
+fit2 <- lm(lwsleep ~ anxiety + depression + anxiety*depression, data = sleep2)
+summary(fit2)
+
+anova(fit1, fit2)
+
+model_5 <- lm(lwsleep ~ lnsleep + depression + anxiety + epworth + rmeq + female + minority + student + optimalsleep + sdisorder + lnage + anxiety*depression, data = sleep2)
+
+summary(model_5)
+```
+
+model 6: add the interaction term (anxiety*depression) and depression added to model 2 (our model of significant variables based on the summary of the full)
+```{r}
+model_6 <- lm(formula = lwsleep ~ lnsleep + optimalsleep + anxiety + rmeq + 
+    epworth + depression + anxiety*depression, data = sleep2)
+
+summary(model_6)
+```
+
+collinearity and VIF 
+```{r}
+# lnsleep
+VIF_lnsleep <- summary(lm(formula = lnsleep ~ optimalsleep + anxiety + rmeq + 
+    epworth + depression + anxiety*depression, data = sleep2))
+1/(1-VIF_lnsleep$r.squared)
+
+# optimalsleep
+VIF_optimalsleep <- summary(lm(formula = optimalsleep ~ lnsleep + anxiety + rmeq + 
+    epworth + depression + anxiety*depression, data = sleep2))
+1/(1-VIF_optimalsleep$r.squared)
+
+# anxiety
+VIF_anxiety <- summary(lm(formula = anxiety ~ lnsleep + optimalsleep + rmeq + 
+    epworth + depression + anxiety*depression, data = sleep2))
+1/(1-VIF_anxiety$r.squared)
+
+# rmeq
+VIF_rmeq <- summary(lm(formula = rmeq ~ lnsleep + optimalsleep + anxiety + 
+    epworth + depression + anxiety*depression, data = sleep2))
+1/(1-VIF_rmeq$r.squared)
+
+# epworth
+VIF_epworth <- summary(lm(formula = epworth ~ lnsleep + optimalsleep + anxiety + 
+    rmeq + depression + anxiety*depression, data = sleep2))
+1/(1-VIF_epworth$r.squared)
+
+# depression
+VIF_depression <- summary(lm(formula = depression ~ lnsleep + optimalsleep + anxiety + rmeq + 
+    epworth + anxiety*depression, data = sleep2))
+1/(1-VIF_depression$r.squared)
+
+# anxiety*depression
+VIF_anxiety.depression <- summary(lm(formula = anxiety*depression ~ lnsleep + 
+    optimalsleep + anxiety + rmeq + epworth + depression, data = sleep2))
+1/(1-VIF_anxiety.depression$r.squared)
+```
+
+anova table for model 1 and model 2 
+```{r}
+anova(model_1, model_2)
+```
+
+anova table for model 5 and model 6 
+```{r}
+anova(model_5, model_6)
+```
+
+anova table for model 2 and model 6 
+```{r}
+anova(model_2, model_6)
+```
+
+t-test for anxiety on model 1
+```{r}
+n <- 2218
+k <- 11
+alpha <- 0.01
+qt(1-(alpha/2), n-k-1)
+```
+
+
